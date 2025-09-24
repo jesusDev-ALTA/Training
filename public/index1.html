@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Realtime Image Stream Frontend</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121823;
+      --accent: #4da3ff;
+      --text: #e6edf3;
+      --muted: #9fb0c3;
+      --danger: #ff5d5d;
+      --success: #4be17a;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    header { padding: 16px 20px; border-bottom: 1px solid #1f2a3a; background: #0b111a; position: sticky; top: 0; z-index: 10; }
+    header h1 { margin: 0; font-size: 18px; letter-spacing: .2px; }
+    .container { max-width: 1100px; margin: 24px auto; padding: 0 20px; display: grid; grid-template-columns: 1fr; gap: 16px; }
+
+    .panel { background: var(--panel); border: 1px solid #1f2a3a; border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    label { font-size: 12px; color: var(--muted); }
+    input[type="text"], select { background: #0e1521; border: 1px solid #273142; color: var(--text); padding: 10px 12px; border-radius: 10px; outline: none; min-width: 240px; }
+    input[type="text"]:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(77,163,255,.2); }
+    button { background: #162236; border: 1px solid #273142; color: var(--text); padding: 10px 14px; border-radius: 12px; cursor: pointer; transition: transform .04s ease; }
+    button:hover { border-color: var(--accent); }
+    button:active { transform: translateY(1px); }
+    .btn-primary { background: linear-gradient(180deg, #1b355a, #11223b); border-color: #2e4c74; }
+    .btn-danger { background: #311a1a; border-color: #5b2b2b; }
+    .btn-success { background: #12351f; border-color: #215133; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; }
+    .stat { background: #0e1521; border: 1px solid #223049; border-radius: 12px; padding: 12px; }
+    .stat .k { font-size: 11px; color: var(--muted); }
+    .stat .v { font-weight: 700; font-size: 20px; margin-top: 4px; letter-spacing: .3px; }
+
+    .viewer { display: grid; grid-template-columns: 1fr; }
+    .video-wrap { position: relative; background: #000; border-radius: 16px; overflow: hidden; border: 1px solid #1f2a3a; }
+    .video-wrap img, .video-wrap canvas { display: block; width: 100%; height: auto; }
+
+    .status-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; margin-right: 6px; }
+    .online { background: var(--success); box-shadow: 0 0 0 4px rgba(75,225,122,.18); }
+    .offline { background: var(--danger); box-shadow: 0 0 0 4px rgba(255,93,93,.18); }
+
+    footer { text-align: center; color: var(--muted); font-size: 12px; padding: 16px; }
+    .hint { color: var(--muted); font-size: 12px; }
+    .sep { height: 1px; background: #1f2a3a; margin: 12px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Realtime Image Stream Frontend</h1>
+  </header>
+
+  <main class="container">
+    <section class="panel">
+      <div class="row" style="justify-content: space-between; align-items: flex-end;">
+        <div>
+          <label for="serverUrl">Server URL</label><br />
+          <input id="serverUrl" type="text" value="http://localhost:3000" placeholder="http://host:port" />
+        </div>
+        <div>
+          <label for="mode">Mode</label><br />
+          <select id="mode">
+            <option value="socket">Socket.IO</option>
+            <option value="mjpeg">MJPEG (multipart)</option>
+          </select>
+        </div>
+        <div class="row">
+          <button id="connectBtn" class="btn-primary">Connect</button>
+          <button id="disconnectBtn">Disconnect</button>
+          <button id="pauseBtn">Pause</button>
+          <button id="snapshotBtn" class="btn-success">Save snapshot</button>
+          <button id="fsBtn">Fullscreen</button>
+        </div>
+      </div>
+      <div class="sep"></div>
+      <div class="row" id="statusRow">
+        <span id="statusDot" class="status-dot offline"></span>
+        <span id="statusText">Disconnected</span>
+        <span class="hint" id="transportHint" style="margin-left: 12px;"></span>
+      </div>
+    </section>
+
+    <section class="panel viewer">
+      <div class="video-wrap" id="videoWrap">
+        <!-- Socket mode uses this <img> (blob URLs). MJPEG mode also reuses it with src=/stream.mjpg -->
+        <img id="view" alt="stream" />
+      </div>
+      <div class="sep"></div>
+      <div class="stats">
+        <div class="stat"><div class="k">FPS (render)</div><div class="v" id="fps">0</div></div>
+        <div class="stat"><div class="k">Frames received</div><div class="v" id="frames">0</div></div>
+        <div class="stat"><div class="k">Bytes (last)</div><div class="v" id="bytes">0</div></div>
+        <div class="stat"><div class="k">Mode</div><div class="v" id="modeStat">Socket.IO</div></div>
+      </div>
+      <div class="hint" style="margin-top:8px;">Tip: In Socket.IO mode the server should emit the event <code>"frame"</code> con payload binario (JPEG). In MJPEG mode, this page consumes <code>/stream.mjpg</code>.</div>
+    </section>
+
+    <footer>
+      Built for ultra‑low overhead binary frames. Works with JPEG blobs and multipart MJPEG.
+    </footer>
+  </main>
+
+  <!-- Socket.IO client (loaded even if we use MJPEG so we can switch dynamically) -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-Jm1t9B4nO3v7rnfJcF2mAIp0n2sY9e1eI7lVhF/0wDq+7H8yq4D2m7q0oC1u4m9Y" crossorigin="anonymous"></script>
+  <script>
+    const els = {
+      serverUrl: document.getElementById('serverUrl'),
+      mode: document.getElementById('mode'),
+      connectBtn: document.getElementById('connectBtn'),
+      disconnectBtn: document.getElementById('disconnectBtn'),
+      pauseBtn: document.getElementById('pauseBtn'),
+      snapshotBtn: document.getElementById('snapshotBtn'),
+      fsBtn: document.getElementById('fsBtn'),
+      statusDot: document.getElementById('statusDot'),
+      statusText: document.getElementById('statusText'),
+      transportHint: document.getElementById('transportHint'),
+      view: document.getElementById('view'),
+      fps: document.getElementById('fps'),
+      frames: document.getElementById('frames'),
+      bytes: document.getElementById('bytes'),
+      modeStat: document.getElementById('modeStat'),
+      videoWrap: document.getElementById('videoWrap'),
+    };
+
+    let socket = null;
+    let connected = false;
+    let paused = false;
+    let frameCount = 0;
+    let renderCount = 0;
+    let lastTime = performance.now();
+    let urlForRevoke = null;
+    let lastBlob = null;
+
+    function setStatus(on, text, transport = '') {
+      connected = !!on;
+      els.statusDot.className = 'status-dot ' + (on ? 'online' : 'offline');
+      els.statusText.textContent = text;
+      els.transportHint.textContent = transport ? `· transport: ${transport}` : '';
+    }
+
+    function revokeUrlSoon() {
+      if (urlForRevoke) {
+        const old = urlForRevoke;
+        urlForRevoke = null;
+        // Revoke on next tick (ensures <img> already swapped)
+        setTimeout(() => URL.revokeObjectURL(old), 0);
+      }
+    }
+
+    function setModeLabel() {
+      els.modeStat.textContent = els.mode.value === 'socket' ? 'Socket.IO' : 'MJPEG';
+    }
+
+    // FPS meter for renders (counts <img> swaps)
+    function tick() {
+      const now = performance.now();
+      const dt = now - lastTime;
+      if (dt >= 1000) {
+        els.fps.textContent = renderCount.toString();
+        renderCount = 0;
+        lastTime = now;
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    function attachSocketHandlers() {
+      if (!socket) return;
+      socket.on('connect', () => setStatus(true, 'Connected', socket.io.engine.transport.name));
+      socket.on('disconnect', () => setStatus(false, 'Disconnected'));
+      socket.on('reconnect_attempt', () => setStatus(false, 'Reconnecting…'));
+      socket.on('frame', (payload) => {
+        if (paused) return;
+        // payload is expected to be ArrayBuffer or Buffer (handled by socket.io)
+        const bytes = (payload && payload.byteLength) || (payload && payload.length) || 0;
+        els.bytes.textContent = bytes.toString();
+        frameCount++;
+        try {
+          lastBlob = new Blob([payload], { type: 'image/jpeg' });
+          const url = URL.createObjectURL(lastBlob);
+          urlForRevoke = els.view.src; // previous URL to revoke
+          els.view.src = url;
+          revokeUrlSoon();
+          renderCount++;
+        } catch (err) {
+          console.error('Failed to render frame', err);
+        }
+      });
+    }
+
+    function connectSocket() {
+      const base = els.serverUrl.value.trim().replace(/\/$/, '');
+      if (socket) {
+        try { socket.close(); } catch {}
+        socket = null;
+      }
+      socket = io(base, { transports: ['websocket'], withCredentials: false });
+      attachSocketHandlers();
+      setModeLabel();
+    }
+
+    function disconnectAll() {
+      try { if (socket) socket.close(); } catch {}
+      socket = null;
+      setStatus(false, 'Disconnected');
+      // Stop MJPEG
+      if (els.mode.value === 'mjpeg') {
+        els.view.src = '';
+      }
+    }
+
+    function connect() {
+      const mode = els.mode.value;
+      if (mode === 'socket') {
+        connectSocket();
+      } else {
+        // MJPEG: point <img> to /stream.mjpg
+        const base = els.serverUrl.value.trim().replace(/\/$/, '');
+        els.view.src = `${base}/stream.mjpg`;
+        setModeLabel();
+        setStatus(true, 'Connected (HTTP stream)', 'http-chunked');
+      }
+    }
+
+    function saveSnapshot() {
+      if (!lastBlob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(lastBlob);
+      a.download = `snapshot_${new Date().toISOString().replace(/[:.]/g,'-')}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      }, 0);
+    }
+
+    function togglePause() {
+      paused = !paused;
+      els.pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+    }
+
+    function goFullscreen() {
+      const el = els.videoWrap;
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+        return;
+      }
+      if (el.requestFullscreen) el.requestFullscreen();
+    }
+
+    // Auto-pause when tab is hidden (optional but good hygiene)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) paused = true; else paused = false;
+      els.pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+    });
+
+    // UI wiring
+    els.connectBtn.addEventListener('click', connect);
+    els.disconnectBtn.addEventListener('click', disconnectAll);
+    els.pauseBtn.addEventListener('click', togglePause);
+    els.snapshotBtn.addEventListener('click', saveSnapshot);
+    els.fsBtn.addEventListener('click', goFullscreen);
+    els.mode.addEventListener('change', () => {
+      disconnectAll();
+      connect();
+    });
+
+    // Optional: auto-connect on load
+    window.addEventListener('load', () => {
+      connect();
+    });
+  </script>
+</body>
+</html>

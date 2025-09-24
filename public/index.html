@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>MJPEG Viewer</title>
+		<style>
+			:root {
+				--bg: #0b0f14;
+				--panel: #121823;
+				--text: #e6edf3;
+				--muted: #9fb0c3;
+				--accent: #4da3ff;
+				--ok: #48e07b;
+				--bad: #ff6b6b;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--text);
+				font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+					Helvetica, Arial;
+			}
+			header {
+				padding: 14px 18px;
+				border-bottom: 1px solid #1f2a3a;
+				background: #0b111a;
+				position: sticky;
+				top: 0;
+				z-index: 10;
+			}
+			header h1 {
+				margin: 0;
+				font-size: 18px;
+				letter-spacing: 0.2px;
+			}
+			.container {
+				max-width: 1000px;
+				margin: 20px auto;
+				padding: 0 18px;
+				display: grid;
+				gap: 16px;
+			}
+			.panel {
+				background: var(--panel);
+				border: 1px solid #1f2a3a;
+				border-radius: 16px;
+				padding: 16px;
+				box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+			}
+			.row {
+				display: flex;
+				gap: 10px;
+				flex-wrap: wrap;
+				align-items: center;
+			}
+			label {
+				font-size: 12px;
+				color: var(--muted);
+			}
+			input[type="text"] {
+				background: #0e1521;
+				border: 1px solid #273142;
+				color: var(--text);
+				padding: 10px 12px;
+				border-radius: 10px;
+				outline: none;
+				min-width: 260px;
+			}
+			input[type="text"]:focus {
+				border-color: var(--accent);
+				box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.2);
+			}
+			button {
+				background: #162236;
+				border: 1px solid #273142;
+				color: var(--text);
+				padding: 10px 14px;
+				border-radius: 12px;
+				cursor: pointer;
+			}
+			button:hover {
+				border-color: var(--accent);
+			}
+			.btn-primary {
+				background: linear-gradient(180deg, #1b355a, #11223b);
+				border-color: #2e4c74;
+			}
+			.btn-danger {
+				background: #311a1a;
+				border-color: #5b2b2b;
+			}
+			.btn-success {
+				background: #12351f;
+				border-color: #215133;
+			}
+			.status-dot {
+				width: 10px;
+				height: 10px;
+				border-radius: 50%;
+				display: inline-block;
+				margin-right: 6px;
+			}
+			.online {
+				background: var(--ok);
+				box-shadow: 0 0 0 4px rgba(72, 224, 123, 0.18);
+			}
+			.offline {
+				background: var(--bad);
+				box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.18);
+			}
+			.viewer {
+				display: grid;
+				gap: 10px;
+			}
+			.video-wrap {
+				position: relative;
+				background: #000;
+				border-radius: 16px;
+				overflow: hidden;
+				border: 1px solid #1f2a3a;
+			}
+			.video-wrap img {
+				display: block;
+				width: 100%;
+				height: auto;
+			}
+			.stats {
+				display: grid;
+				grid-template-columns: repeat(4, minmax(120px, 1fr));
+				gap: 10px;
+			}
+			.stat {
+				background: #0e1521;
+				border: 1px solid #223049;
+				border-radius: 12px;
+				padding: 10px;
+			}
+			.stat .k {
+				font-size: 11px;
+				color: var(--muted);
+			}
+			.stat .v {
+				font-weight: 700;
+				font-size: 18px;
+				margin-top: 3px;
+			}
+			.sep {
+				height: 1px;
+				background: #1f2a3a;
+				margin: 12px 0;
+			}
+			.hint {
+				color: var(--muted);
+				font-size: 12px;
+			}
+		</style>
+	</head>
+	<body>
+		<header><h1>MJPEG Viewer</h1></header>
+		<main class="container">
+			<section class="panel">
+				<div
+					class="row"
+					style="justify-content: space-between; align-items: flex-end"
+				>
+					<div>
+						<label for="serverUrl">Server URL</label><br />
+						<input
+							id="serverUrl"
+							type="text"
+							value="http://localhost:3000"
+							placeholder="http://host:port"
+						/>
+					</div>
+					<div class="row">
+						<button id="connectBtn" class="btn-primary">Connect</button>
+						<button id="pauseBtn">Pause</button>
+						<button id="snapshotBtn" class="btn-success">Snapshot</button>
+						<button id="fsBtn">Fullscreen</button>
+					</div>
+				</div>
+				<div class="sep"></div>
+				<div class="row">
+					<span id="statusDot" class="status-dot offline"></span>
+					<span id="statusText">Disconnected</span>
+					<span class="hint" style="margin-left: 12px"
+						>Mode: MJPEG via <code>&lt;img src="/stream.mjpg"&gt;</code></span
+					>
+				</div>
+			</section>
+
+			<section class="panel viewer">
+				<div class="video-wrap" id="videoWrap">
+					<!-- Important: crossOrigin enables Canvas snapshots when server sends ACAO header -->
+					<img id="view" alt="mjpeg-stream" crossorigin="anonymous" />
+				</div>
+				<div class="sep"></div>
+				<div class="stats">
+					<div class="stat">
+						<div class="k">Connected</div>
+						<div class="v" id="connectedV">No</div>
+					</div>
+					<div class="stat">
+						<div class="k">FPS (server)</div>
+						<div class="v" id="fpsV">0</div>
+					</div>
+					<div class="stat">
+						<div class="k">Last frame (KB)</div>
+						<div class="v" id="kbV">0</div>
+					</div>
+					<div class="stat">
+						<div class="k">Frames received</div>
+						<div class="v" id="countV">0</div>
+					</div>
+				</div>
+				<div class="hint">
+					Snapshot usa <code>&lt;canvas&gt;</code>. Requiere que el servidor
+					MJPEG incluya <code>Access-Control-Allow-Origin</code> y que esta
+					imagen tenga <code>crossOrigin="anonymous"</code>.
+				</div>
+			</section>
+		</main>
+
+		<script>
+			const els = {
+				url: document.getElementById("serverUrl"),
+				connectBtn: document.getElementById("connectBtn"),
+				pauseBtn: document.getElementById("pauseBtn"),
+				snapshotBtn: document.getElementById("snapshotBtn"),
+				fsBtn: document.getElementById("fsBtn"),
+				statusDot: document.getElementById("statusDot"),
+				statusText: document.getElementById("statusText"),
+				view: document.getElementById("view"),
+				videoWrap: document.getElementById("videoWrap"),
+				connectedV: document.getElementById("connectedV"),
+				fpsV: document.getElementById("fpsV"),
+				kbV: document.getElementById("kbV"),
+				countV: document.getElementById("countV"),
+			};
+
+			let base = "";
+			let paused = false;
+			let statsTimer = null;
+			let prevFrames = 0;
+			let totalFrames = 0;
+
+			function setConnected(on) {
+				els.statusDot.className = "status-dot " + (on ? "online" : "offline");
+				els.statusText.textContent = on
+					? "Connected (HTTP stream)"
+					: "Disconnected";
+				els.connectedV.textContent = on ? "Yes" : "No";
+			}
+
+			function connect() {
+				base = els.url.value.trim().replace(/\/$/, "");
+				els.view.src = base + "/stream.mjpg";
+				setConnected(true);
+				startStats();
+			}
+
+			function pauseResume() {
+				paused = !paused;
+				if (paused) {
+					els.view.dataset.srcBackup = els.view.src;
+					els.view.src = "";
+					els.pauseBtn.textContent = "Resume";
+					setConnected(false);
+					stopStats();
+				} else {
+					els.view.src = els.view.dataset.srcBackup || base + "/stream.mjpg";
+					els.pauseBtn.textContent = "Pause";
+					setConnected(true);
+					startStats();
+				}
+			}
+
+			function snapshot() {
+				// Draw current <img> to canvas, then download
+				const img = els.view;
+				const w = img.naturalWidth || img.width;
+				const h = img.naturalHeight || img.height;
+				if (!w || !h) {
+					return;
+				}
+				const canvas = document.createElement("canvas");
+				canvas.width = w;
+				canvas.height = h;
+				const ctx = canvas.getContext("2d");
+				ctx.drawImage(img, 0, 0, w, h);
+				canvas.toBlob(
+					(blob) => {
+						if (!blob) return;
+						const a = document.createElement("a");
+						a.href = URL.createObjectURL(blob);
+						a.download =
+							"snapshot_" +
+							new Date().toISOString().replace(/[:.]/g, "-") +
+							".jpg";
+						document.body.appendChild(a);
+						a.click();
+						setTimeout(() => {
+							URL.revokeObjectURL(a.href);
+							a.remove();
+						}, 0);
+					},
+					"image/jpeg",
+					0.95
+				);
+			}
+
+			function startStats() {
+				stopStats();
+				prevFrames = 0;
+				totalFrames = 0;
+				statsTimer = setInterval(async () => {
+					try {
+						const r = await fetch(base + "/stats", { cache: "no-store" });
+						const j = await r.json();
+						const fps = Math.max(0, j.framesReceived - prevFrames);
+						prevFrames = j.framesReceived;
+						totalFrames = j.framesReceived;
+						els.fpsV.textContent = String(fps);
+						els.kbV.textContent = ((j.bytesLastFrame / 1024) | 0).toString();
+						els.countV.textContent = String(totalFrames);
+					} catch (e) {
+						/* ignore */
+					}
+				}, 1000);
+			}
+
+			function stopStats() {
+				if (statsTimer) {
+					clearInterval(statsTimer);
+					statsTimer = null;
+				}
+			}
+
+			function goFullscreen() {
+				const el = els.videoWrap;
+				if (document.fullscreenElement) {
+					document.exitFullscreen();
+					return;
+				}
+				if (el.requestFullscreen) el.requestFullscreen();
+			}
+
+			// Wire UI
+			els.connectBtn.addEventListener("click", connect);
+			els.pauseBtn.addEventListener("click", pauseResume);
+			els.snapshotBtn.addEventListener("click", snapshot);
+			els.fsBtn.addEventListener("click", goFullscreen);
+
+			// Auto-connect on load
+			window.addEventListener("load", connect);
+		</script>
+	</body>
+</html>
